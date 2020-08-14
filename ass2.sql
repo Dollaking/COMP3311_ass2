@@ -141,26 +141,118 @@ where g.title_id = a.id
 group by a.name
 ;
 
-/*
+
 -- Q8 Get the names of all people who had both actor and crew roles on the same movie
+
 
 create or replace view Q8(name)
 as
-...
+select distinct n.name
+from names n, actor_roles a, crew_roles c, titles t
+where a.name_id = c.name_id
+	and t.format = 'movie'
+	and t.id = a.title_id
+	and a.title_id = c.title_id
+	and n.id = a.name_id
+	and n.id = c.name_id
+order by n.name
 ;
+
 
 -- Q9 Who was the youngest person to have an acting role in a movie, and how old were they when the movie started?
 
 create or replace view Q9(name,age)
 as
-...
+select distinct n.name, (t.start_year - n.birth_year)
+from actor_roles a, titles t, names n
+where a.title_id = t.id
+	and a.name_id = n.id
+	and t.format = 'movie'
+	and (t.start_year - n.birth_year) > -1
+order by (t.start_year - n.birth_year) ASC
+limit 1
 ;
 
 -- Q10 Write a PLpgSQL function that, given part of a title, shows the full title and the total size of the cast and crew
+create or replace view countActor(title, nactor)
+as 
+select title_id, count(name_id)
+from actor_roles
+group by title_id
+;
 
+create or replace view countCrew(title, ncrew)
+as
+select title_id, count(name_id)
+from crew_roles
+group by title_id
+;
+
+create or replace view countPrincipal(title, nprincipal)
+as 
+select title_id, count(name_id)
+from principals
+group by title_id
+;
+
+create or replace view countStaff(title, nstaff, id)
+as
+select t.main_title, min(a.nactor + c.ncrew) - 1, t.id
+from titles t, countActor a, countCrew c
+where (t.id = a.title
+	or t.id = c.title)
+group by t.id
+;
+
+create or replace view countStaff2(title, nstaff, id)
+as
+select t.main_title, min(cs.nstaff + p.nprincipal) - 1, t.id
+from titles t, countStaff cs, countPrincipal p
+where (t.id = cs.id
+	or t.id = p.title)
+group by t.id
+;
+
+/*create or replace function maxCountStaff(partial_title text) returns int as $$
+declare
+	result int;
+begin
+	select count(*) into result 
+	from countStaff
+	where title ilike '%' || partial_title || '%'
+	;
+	return result;
+end;
+$$ language plpgsql;
+*/
 create or replace function
 	Q10(partial_title text) returns setof text
 as $$
-...
+declare
+	test text;
+	selecttitle text;
+	indexoffset int := 0;
+	ncast bigint;
+	cs record;
+	 
+begin
+	for cs in
+		select title, nstaff, id
+		from countStaff2
+		
+	loop
+		if (cs.title ilike '%' || partial_title || '%') then
+			selecttitle := cs.title;
+			ncast := cs.nstaff;
+			return next selecttitle || ' has ' || ncast || ' cast and crew';
+			indexoffset := indexoffset + 1;
+		end if;
+	end loop;
+	
+	if (indexoffset = 0) then
+		return next 'No matching titles';
+	end if;
+
+end;
 $$ language plpgsql;
-*/
+
